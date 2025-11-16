@@ -145,9 +145,33 @@ async function reload() {
     });
 
     console.log("Extension reloaded successfully!");
-    console.log("Refresh the ChatGPT page to see changes.");
 
     await extensionClient.close();
+
+    // Reload ChatGPT tab if it's open
+    const chatTarget = targets.find(
+      (t) =>
+        t.url &&
+        (t.url.includes("chat.openai.com") || t.url.includes("chatgpt.com")),
+    );
+
+    if (chatTarget) {
+      console.log("Reloading ChatGPT tab...");
+      const pageClient = await CDP({
+        port: 9222,
+        target: chatTarget.id,
+      });
+
+      const { Page } = pageClient;
+      await Page.enable();
+      await Page.reload({});
+      await pageClient.close();
+      console.log("ChatGPT tab reloaded.");
+    } else {
+      console.log(
+        "ChatGPT tab not found. Please refresh chat.openai.com manually.",
+      );
+    }
   } catch (error) {
     if (error.code === "ECONNREFUSED") {
       console.error("Error: Chrome not running with remote debugging.");

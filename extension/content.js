@@ -365,14 +365,14 @@ function setupObserver(container) {
   }
 
   observer = new MutationObserver((mutations) => {
-    for (const m of mutations) {
-      console.log(m);
-      if (m.addedNodes.length) {
-        for (const node of m.addedNodes) {
-          console.log("added", node);
-        }
-      }
-    }
+    // for (const m of mutations) {
+    //   console.log(m);
+    //   if (m.addedNodes.length) {
+    //     for (const node of m.addedNodes) {
+    //       console.log("added", node);
+    //     }
+    //   }
+    // }
     // Find all assistant messages
     const messages = document.querySelectorAll(
       '[data-message-author-role="assistant"]',
