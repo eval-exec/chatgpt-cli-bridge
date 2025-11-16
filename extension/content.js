@@ -7,6 +7,74 @@ let isConnected = false;
 let currentResponseText = "";
 let observer = null;
 let responseTimeout = null;
+const DEBUG_TEXT_LIMIT = 200;
+
+function normalizeNodeText(text = "") {
+  return text.replace(/\s+/g, " ").trim().slice(0, DEBUG_TEXT_LIMIT);
+}
+
+function serializeNode(node) {
+  if (!node) {
+    return { kind: "unknown" };
+  }
+
+  const nodeType = node.nodeType;
+
+  if (nodeType === Node.TEXT_NODE) {
+    return {
+      kind: "text",
+      nodeType,
+      text: normalizeNodeText(node.textContent || ""),
+    };
+  }
+
+  if (nodeType === Node.ELEMENT_NODE) {
+    const el = node;
+    const attributes = {};
+    if (el.attributes) {
+      Array.from(el.attributes).forEach((attr) => {
+        attributes[attr.name] = attr.value;
+      });
+    }
+
+    return {
+      kind: "element",
+      nodeType,
+      tag: el.tagName ? el.tagName.toLowerCase() : undefined,
+      id: el.id || undefined,
+      classes: el.classList ? Array.from(el.classList) : undefined,
+      text: normalizeNodeText(el.innerText || el.textContent || ""),
+      attributes: Object.keys(attributes).length ? attributes : undefined,
+      childCount: el.childNodes ? el.childNodes.length : 0,
+    };
+  }
+
+  return {
+    kind: "node",
+    nodeType,
+    text: normalizeNodeText(node.textContent || ""),
+  };
+}
+
+function describeSerializedNode(info) {
+  if (!info) return "unknown node";
+
+  if (info.kind === "text") {
+    return info.text ? `Text: "${info.text}"` : "Empty text node";
+  }
+
+  if (info.kind === "element") {
+    const idPart = info.id ? `#${info.id}` : "";
+    const classPart = info.classes
+      ? info.classes.map((cls) => `.${cls}`).join("")
+      : "";
+    const tag = info.tag || "element";
+    const descriptor = `<${tag}${idPart}${classPart}>`;
+    return info.text ? `${descriptor} "${info.text}"` : descriptor;
+  }
+
+  return `Node type ${info.nodeType}`;
+}
 
 // Connect to WebSocket server
 function connect() {
@@ -366,18 +434,60 @@ function setupObserver(container) {
   }
 
   observer = new MutationObserver((mutations) => {
+    // Check mutations for Copy button being added (indicates completion)
+    let foundCopyButton = false;
+
     for (const m of mutations) {
+      // Check the mutation target and its descendants for Copy button
+      if (m.target && m.target.nodeType === Node.ELEMENT_NODE) {
+        const targetElement = m.target;
+
+        // Check if target itself is a Copy button
+        if (targetElement.tagName === 'BUTTON' && targetElement.getAttribute('aria-label') === 'Copy') {
+          foundCopyButton = true;
+          console.log('[ChatGPT CLI Bridge] Copy button detected in mutation target!');
+        }
+
+        // Check if target contains a Copy button
+        if (!foundCopyButton && targetElement.querySelector) {
+          const copyBtn = targetElement.querySelector('button[aria-label="Copy"]');
+          if (copyBtn) {
+            foundCopyButton = true;
+            console.log('[ChatGPT CLI Bridge] Copy button found in mutation target descendants!');
+          }
+        }
+      }
+
+      // Also check added nodes
       for (const node of m.addedNodes) {
+        if (node.nodeType === Node.ELEMENT_NODE) {
+          if (node.tagName === 'BUTTON' && node.getAttribute('aria-label') === 'Copy') {
+            foundCopyButton = true;
+            console.log('[ChatGPT CLI Bridge] Copy button detected in addedNodes!');
+          } else if (node.querySelector) {
+            const copyBtn = node.querySelector('button[aria-label="Copy"]');
+            if (copyBtn) {
+              foundCopyButton = true;
+              console.log('[ChatGPT CLI Bridge] Copy button found in added node descendants!');
+            }
+          }
+        }
+
         if (isConnected && ws.readyState === WebSocket.OPEN) {
+          const nodeInfo = serializeNode(node);
           ws.send(
             JSON.stringify({
               type: "debug",
-              text: node,
+              text: describeSerializedNode(nodeInfo),
+              node: nodeInfo,
               done: false,
             }),
           );
         }
+
+        if (foundCopyButton) break;
       }
+      if (foundCopyButton) break;
     }
 
     // Find all assistant messages
@@ -407,14 +517,7 @@ function setupObserver(container) {
     // Get text from the cleaned content
     const messageText = contentClone.innerText || contentClone.textContent;
 
-    // Check if Copy/Share buttons are present (indicates response is complete)
-    const copyButton = latestMessage.querySelector(
-      'button[aria-label*="Copy"], button[title*="Copy"]',
-    );
-    const shareButton = latestMessage.querySelector(
-      'button[aria-label*="Share"], button[title*="Share"]',
-    );
-    const hasActionButtons = copyButton !== null || shareButton !== null;
+    const hasActionButtons = foundCopyButton;
 
     // Only send if text has changed
     if (messageText !== currentResponseText) {
@@ -456,20 +559,27 @@ function setupObserver(container) {
           JSON.stringify({
             type: "chunk",
             text: newContent,
-            done: false,
+            done: hasActionButtons,
           }),
         );
       }
 
       if (hasActionButtons) {
         console.log(
-          "[ChatGPT CLI Bridge] Response complete (Copy/Share buttons detected)",
+          "[ChatGPT CLI Bridge] Response complete (Copy button detected in mutations)",
         );
-        // Clear polling since we're done
-        if (completionCheckInterval) {
-          clearInterval(completionCheckInterval);
-          completionCheckInterval = null;
-        }
+      }
+    } else if (hasActionButtons && currentResponseText.length > 0) {
+      // Copy button appeared but no new text - send final done signal
+      console.log('[ChatGPT CLI Bridge] Copy button detected but no new text - sending done signal');
+      if (isConnected && ws.readyState === WebSocket.OPEN) {
+        ws.send(
+          JSON.stringify({
+            type: "chunk",
+            text: "",
+            done: true,
+          }),
+        );
       }
     }
   });

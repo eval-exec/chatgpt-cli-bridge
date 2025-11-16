@@ -118,35 +118,103 @@ async function reload() {
 
     const targets = await CDP.List({ port: 9222 });
 
-    // Find our extension
-    const extensionTarget = targets.find(
-      (t) => t.url && t.url.includes("chrome://extensions"),
-    );
+    // Find our extension target
+    const extensionName = "ChatGPT CLI Bridge";
+    let extensionTarget = targets.find((t) => {
+      const title = t.title || "";
+      return title.includes(extensionName);
+    });
 
-    if (!extensionTarget) {
-      console.error("Extension not found. Is Chrome running?");
-      console.error("Start Chrome with: ./ext launch");
-      process.exit(1);
+    let extensionId = null;
+
+    if (extensionTarget) {
+      console.log(
+        `Reloading extension target: ${
+          extensionTarget.title || extensionTarget.url
+        }`,
+      );
+
+      // Connect directly to the extension target
+      const extensionClient = await CDP({
+        port: 9222,
+        target: extensionTarget.id,
+      });
+
+      const { Runtime } = extensionClient;
+
+      await Runtime.evaluate({
+        expression: "chrome.runtime.reload()",
+        awaitPromise: true,
+      });
+
+      extensionId = extensionTarget.id || "unknown";
+
+      await extensionClient.close();
+      console.log("Extension reloaded successfully!");
+    } else {
+      // Fall back to controlling chrome://extensions
+      const extensionsPage = targets.find(
+        (t) => t.url && t.url.startsWith("chrome://extensions"),
+      );
+
+      if (!extensionsPage) {
+        console.error("Extension not found. Is Chrome running?");
+        console.error(
+          'Make sure "ChatGPT CLI Bridge" is installed and Chrome was started via "./ext launch".',
+        );
+        console.error("Available targets:");
+        targets.forEach((t) => {
+          console.error(
+            `  - ${t.title || t.type || "unknown"} (${t.url || "no url"})`,
+          );
+        });
+        process.exit(1);
+      }
+
+      console.log(
+        'Extension target not found; using chrome://extensions to reload by name.',
+      );
+
+      const extensionsClient = await CDP({
+        port: 9222,
+        target: extensionsPage.id,
+      });
+
+      const { Runtime } = extensionsClient;
+      const reloadScript = `
+        (function() {
+          const EXTENSION_NAME = ${JSON.stringify(extensionName)};
+
+          function getExtensions() {
+            return new Promise((resolve, reject) => {
+              try {
+                chrome.developerPrivate.getExtensions(resolve);
+              } catch (error) {
+                reject(error);
+              }
+            });
+          }
+
+          return getExtensions().then((extensions) => {
+            const target = extensions.find((ext) => ext.name === EXTENSION_NAME);
+            if (!target) {
+              throw new Error('Extension not found in chrome://extensions: ' + EXTENSION_NAME);
+            }
+            chrome.developerPrivate.reload(target.id);
+            return target.id;
+          });
+        })();
+      `;
+
+      const reloadResult = await Runtime.evaluate({
+        expression: reloadScript,
+        awaitPromise: true,
+      });
+
+      extensionId = reloadResult?.result?.value || "unknown";
+      await extensionsClient.close();
+      console.log(`Extension reloaded via chrome://extensions (id: ${extensionId})`);
     }
-
-    console.log("Reloading extension...");
-
-    // Connect to extension context
-    const extensionClient = await CDP({
-      port: 9222,
-      target: extensionTarget.id,
-    });
-
-    const { Runtime } = extensionClient;
-
-    await Runtime.evaluate({
-      expression: "chrome.runtime.reload()",
-      awaitPromise: true,
-    });
-
-    console.log("Extension reloaded successfully!");
-
-    await extensionClient.close();
 
     // Reload ChatGPT tab if it's open
     const chatTarget = targets.find(

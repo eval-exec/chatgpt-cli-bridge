@@ -59,7 +59,10 @@ wss.on('connection', (ws) => {
           }
           
           if (message.type === 'debug') {
-            console.log(`Debug: "${message.text}"`);
+            const debugText = typeof message.text === 'string'
+              ? message.text
+              : JSON.stringify(message.text);
+            console.log(`Debug: "${debugText}"`);
           }
         }
       }
