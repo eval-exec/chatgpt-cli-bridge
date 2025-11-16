@@ -1,32 +1,32 @@
 #!/usr/bin/env node
 
-const { spawn } = require('child_process');
-const CDP = require('chrome-remote-interface');
-const path = require('path');
-const chromeLauncher = require('chrome-launcher');
+const { spawn } = require("child_process");
+const CDP = require("chrome-remote-interface");
+const path = require("path");
+const chromeLauncher = require("chrome-launcher");
 
 const command = process.argv[2];
-const extensionPath = path.resolve(__dirname, '../extension');
+const extensionPath = path.resolve(__dirname, "../extension");
 
 function launch() {
-  console.log('Launching Chrome with extension...');
+  console.log("Launching Chrome with extension...");
   console.log(`Extension path: ${extensionPath}`);
 
   try {
     // Find Chrome executable
-    const { execSync } = require('child_process');
+    const { execSync } = require("child_process");
     let chromePath;
 
     const paths = [
-      'google-chrome-stable',
-      'google-chrome',
-      'chromium',
-      'chromium-browser'
+      "google-chrome-stable",
+      "google-chrome",
+      "chromium",
+      "chromium-browser",
     ];
 
     for (const p of paths) {
       try {
-        execSync(`which ${p}`, { stdio: 'pipe' });
+        execSync(`which ${p}`, { stdio: "pipe" });
         chromePath = p;
         break;
       } catch (e) {
@@ -35,71 +35,76 @@ function launch() {
     }
 
     if (!chromePath) {
-      console.error('Error: Chrome/Chromium not found');
-      console.error('Please install Chrome or Chromium');
+      console.error("Error: Chrome/Chromium not found");
+      console.error("Please install Chrome or Chromium");
       process.exit(1);
     }
 
     console.log(`Using: ${chromePath}`);
-    console.log('');
+    console.log("");
 
     // Launch Chrome directly
     const userDataDir = `/tmp/chrome-chatgpt-cli-${Date.now()}`;
-    const chromeProcess = spawn(chromePath, [
-      `--load-extension=${extensionPath}`,
-      '--auto-open-devtools-for-tabs',
-      '--remote-debugging-port=9222',
-      '--disable-features=DialMediaRouteProvider',
-      `--user-data-dir=${userDataDir}`,
-      'https://chat.openai.com'
-    ], {
-      detached: false,
-      stdio: 'ignore'
-    });
+    const chromeProcess = spawn(
+      chromePath,
+      [
+        `--load-extension=${extensionPath}`,
+        "--auto-open-devtools-for-tabs",
+        "--remote-debugging-port=9222",
+        "--disable-features=DialMediaRouteProvider",
+        `--user-data-dir=${userDataDir}`,
+        "https://chat.openai.com",
+      ],
+      {
+        detached: false,
+        stdio: "ignore",
+      },
+    );
 
     const pid = chromeProcess.pid;
 
     console.log(`Chrome launched!`);
     console.log(`PID: ${pid}`);
-    console.log('Remote debugging: localhost:9222');
-    console.log('');
-    console.log('Chrome is running.');
-    console.log('');
-    console.log('Commands:');
-    console.log('  ./ext reload    - Reload the extension');
-    console.log('  kill ' + pid + '      - Stop Chrome');
-    console.log('');
+    console.log("Remote debugging: localhost:9222");
+    console.log("");
+    console.log("Chrome is running.");
+    console.log("");
+    console.log("Commands:");
+    console.log("  ./ext reload    - Reload the extension");
+    console.log("  kill " + pid + "      - Stop Chrome");
+    console.log("");
 
     // Save PID for later use
-    require('fs').writeFileSync(
-      path.join(__dirname, '.chrome-pid'),
-      pid.toString()
+    require("fs").writeFileSync(
+      path.join(__dirname, ".chrome-pid"),
+      pid.toString(),
     );
 
-    console.log('Tip: Run "./ext reload" after making changes to the extension');
+    console.log(
+      'Tip: Run "./ext reload" after making changes to the extension',
+    );
 
     // Keep process running
-    process.on('SIGINT', () => {
-      console.log('\nStopping Chrome...');
+    process.on("SIGINT", () => {
+      console.log("\nStopping Chrome...");
       try {
-        process.kill(pid, 'SIGTERM');
+        process.kill(pid, "SIGTERM");
       } catch (e) {
         // ignore
       }
       process.exit(0);
     });
 
-    chromeProcess.on('error', (error) => {
-      console.error('Chrome process error:', error.message);
+    chromeProcess.on("error", (error) => {
+      console.error("Chrome process error:", error.message);
       process.exit(1);
     });
-
   } catch (error) {
-    console.error('Failed to launch Chrome:', error.message);
-    console.error('\nTroubleshooting:');
-    console.error('1. Make sure Chrome/Chromium is installed');
-    console.error('2. Try manually: google-chrome --version');
-    console.error('3. Close any running Chrome instances on port 9222');
+    console.error("Failed to launch Chrome:", error.message);
+    console.error("\nTroubleshooting:");
+    console.error("1. Make sure Chrome/Chromium is installed");
+    console.error("2. Try manually: google-chrome --version");
+    console.error("3. Close any running Chrome instances on port 9222");
     process.exit(1);
   }
 }
@@ -108,48 +113,47 @@ async function reload() {
   let client;
 
   try {
-    console.log('Connecting to Chrome...');
+    console.log("Connecting to Chrome...");
     client = await CDP({ port: 9222 });
 
     const targets = await CDP.List({ port: 9222 });
 
     // Find our extension
-    const extensionTarget = targets.find(t =>
-      t.url && t.url.includes('chrome-extension://')
+    const extensionTarget = targets.find(
+      (t) => t.url && t.url.includes("chrome://extensions"),
     );
 
     if (!extensionTarget) {
-      console.error('Extension not found. Is Chrome running?');
-      console.error('Start Chrome with: ./ext launch');
+      console.error("Extension not found. Is Chrome running?");
+      console.error("Start Chrome with: ./ext launch");
       process.exit(1);
     }
 
-    console.log('Reloading extension...');
+    console.log("Reloading extension...");
 
     // Connect to extension context
     const extensionClient = await CDP({
       port: 9222,
-      target: extensionTarget.id
+      target: extensionTarget.id,
     });
 
     const { Runtime } = extensionClient;
 
     await Runtime.evaluate({
-      expression: 'chrome.runtime.reload()',
-      awaitPromise: true
+      expression: "chrome.runtime.reload()",
+      awaitPromise: true,
     });
 
-    console.log('Extension reloaded successfully!');
-    console.log('Refresh the ChatGPT page to see changes.');
+    console.log("Extension reloaded successfully!");
+    console.log("Refresh the ChatGPT page to see changes.");
 
     await extensionClient.close();
-
   } catch (error) {
-    if (error.code === 'ECONNREFUSED') {
-      console.error('Error: Chrome not running with remote debugging.');
-      console.error('Start Chrome with: ./ext launch');
+    if (error.code === "ECONNREFUSED") {
+      console.error("Error: Chrome not running with remote debugging.");
+      console.error("Start Chrome with: ./ext launch");
     } else {
-      console.error('Error:', error.message);
+      console.error("Error:", error.message);
     }
     process.exit(1);
   } finally {
@@ -160,47 +164,47 @@ async function reload() {
 }
 
 async function stop() {
-  const pidFile = path.join(__dirname, '.chrome-pid');
+  const pidFile = path.join(__dirname, ".chrome-pid");
 
   try {
-    const pid = require('fs').readFileSync(pidFile, 'utf8').trim();
+    const pid = require("fs").readFileSync(pidFile, "utf8").trim();
     console.log(`Stopping Chrome (PID: ${pid})...`);
-    process.kill(parseInt(pid), 'SIGTERM');
-    require('fs').unlinkSync(pidFile);
-    console.log('Chrome stopped.');
+    process.kill(parseInt(pid), "SIGTERM");
+    require("fs").unlinkSync(pidFile);
+    console.log("Chrome stopped.");
   } catch (error) {
-    console.error('Error: Could not stop Chrome.');
-    console.error('Kill manually with: pkill -f chrome');
+    console.error("Error: Could not stop Chrome.");
+    console.error("Kill manually with: pkill -f chrome");
   }
 }
 
 function usage() {
-  console.log('Extension Manager - Manage ChatGPT CLI Bridge extension\n');
-  console.log('Usage: ./ext <command>\n');
-  console.log('Commands:');
-  console.log('  launch    Launch Chrome with extension loaded');
-  console.log('  reload    Reload the extension (Chrome must be running)');
-  console.log('  stop      Stop Chrome');
-  console.log('  help      Show this help\n');
-  console.log('Examples:');
-  console.log('  ./ext launch    # Start Chrome with extension');
-  console.log('  ./ext reload    # Reload extension after code changes');
-  console.log('  ./ext stop      # Stop Chrome');
+  console.log("Extension Manager - Manage ChatGPT CLI Bridge extension\n");
+  console.log("Usage: ./ext <command>\n");
+  console.log("Commands:");
+  console.log("  launch    Launch Chrome with extension loaded");
+  console.log("  reload    Reload the extension (Chrome must be running)");
+  console.log("  stop      Stop Chrome");
+  console.log("  help      Show this help\n");
+  console.log("Examples:");
+  console.log("  ./ext launch    # Start Chrome with extension");
+  console.log("  ./ext reload    # Reload extension after code changes");
+  console.log("  ./ext stop      # Stop Chrome");
 }
 
 // Main
 (async () => {
   switch (command) {
-    case 'launch':
+    case "launch":
       launch();
       break;
-    case 'reload':
+    case "reload":
       await reload();
       break;
-    case 'stop':
+    case "stop":
       stop();
       break;
-    case 'help':
+    case "help":
     default:
       usage();
       process.exit(command ? 0 : 1);
