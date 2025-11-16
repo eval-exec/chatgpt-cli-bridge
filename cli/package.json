@@ -1,0 +1,15 @@
+{
+  "name": "chatgpt-cli",
+  "version": "1.0.0",
+  "description": "CLI client for ChatGPT via Chrome extension bridge",
+  "main": "chatgpt-cli.js",
+  "bin": {
+    "chatgpt": "./chatgpt-cli.js"
+  },
+  "scripts": {
+    "link": "npm link"
+  },
+  "dependencies": {
+    "ws": "^8.14.2"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "chatgpt-cli-bridge-scripts",
+  "version": "1.0.0",
+  "description": "Utility scripts for managing Chrome extension",
+  "scripts": {
+    "launch": "node launch-chrome.js",
+    "reload": "node reload-extension.js"
+  },
+  "dependencies": {
+    "chrome-launcher": "^1.1.0",
+    "chrome-remote-interface": "^0.33.0"
+  }
+}
