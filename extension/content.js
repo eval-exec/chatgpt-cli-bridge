@@ -436,40 +436,46 @@ function setupObserver(container) {
   observer = new MutationObserver((mutations) => {
     // Check mutations for Copy button being added (indicates completion)
     let foundCopyButton = false;
+    let messageTextFromMutations = '';
 
     for (const m of mutations) {
-      // Check the mutation target and its descendants for Copy button
-      if (m.target && m.target.nodeType === Node.ELEMENT_NODE) {
-        const targetElement = m.target;
-
-        // Check if target itself is a Copy button
-        if (targetElement.tagName === 'BUTTON' && targetElement.getAttribute('aria-label') === 'Copy') {
-          foundCopyButton = true;
-          console.log('[ChatGPT CLI Bridge] Copy button detected in mutation target!');
-        }
-
-        // Check if target contains a Copy button
-        if (!foundCopyButton && targetElement.querySelector) {
-          const copyBtn = targetElement.querySelector('button[aria-label="Copy"]');
-          if (copyBtn) {
-            foundCopyButton = true;
-            console.log('[ChatGPT CLI Bridge] Copy button found in mutation target descendants!');
-          }
-        }
-      }
-
-      // Also check added nodes
+      // Check added nodes for Copy button or message content
       for (const node of m.addedNodes) {
         if (node.nodeType === Node.ELEMENT_NODE) {
+          // Check if this is a Copy button
           if (node.tagName === 'BUTTON' && node.getAttribute('aria-label') === 'Copy') {
             foundCopyButton = true;
             console.log('[ChatGPT CLI Bridge] Copy button detected in addedNodes!');
           } else if (node.querySelector) {
+            // Check if node contains Copy button
             const copyBtn = node.querySelector('button[aria-label="Copy"]');
             if (copyBtn) {
               foundCopyButton = true;
               console.log('[ChatGPT CLI Bridge] Copy button found in added node descendants!');
             }
+
+            // Check if this node is part of assistant message
+            const isAssistantMessage = node.querySelector('[data-message-author-role="assistant"]') ||
+                                      node.closest('[data-message-author-role="assistant"]') ||
+                                      (node.getAttribute && node.getAttribute('data-message-author-role') === 'assistant');
+
+            if (isAssistantMessage || node.textContent) {
+              // This might be message content - we'll collect it
+              const clone = node.cloneNode(true);
+              if (clone.querySelectorAll) {
+                clone.querySelectorAll('button').forEach(btn => btn.remove());
+              }
+              const text = clone.innerText || clone.textContent || '';
+              if (text.length > 0) {
+                messageTextFromMutations += text;
+              }
+            }
+          }
+        } else if (node.nodeType === Node.TEXT_NODE) {
+          // Text nodes might contain message content
+          const text = node.textContent || '';
+          if (text.trim().length > 0) {
+            messageTextFromMutations += text;
           }
         }
 
@@ -484,38 +490,35 @@ function setupObserver(container) {
             }),
           );
         }
-
-        if (foundCopyButton) break;
       }
+
+      // Also check mutation target for Copy button
+      if (m.target && m.target.nodeType === Node.ELEMENT_NODE) {
+        const targetElement = m.target;
+        if (targetElement.querySelector) {
+          const copyBtn = targetElement.querySelector('button[aria-label="Copy"]');
+          if (copyBtn) {
+            foundCopyButton = true;
+            console.log('[ChatGPT CLI Bridge] Copy button found in mutation target!');
+          }
+        }
+      }
+
       if (foundCopyButton) break;
     }
 
-    // Find all assistant messages
-    const messages = document.querySelectorAll(
-      '[data-message-author-role="assistant"]',
-    );
-
-    // Only process if we have MORE messages than before the query was sent
-    if (messages.length <= messageCountBeforeQuery) return;
-
-    // Get the NEWEST message (the one we just triggered)
-    const latestMessage = messages[messages.length - 1];
-
-    // Get only the message content, excluding action buttons
-    // Look for the actual message content container, not the whole message wrapper
-    const messageContent =
-      latestMessage.querySelector(
-        '[class*="markdown"], [class*="message"], [data-message-id]',
-      ) || latestMessage;
-
-    // Clone the element to remove buttons before getting text
-    const contentClone = messageContent.cloneNode(true);
-
-    // Remove all buttons from the clone
-    contentClone.querySelectorAll("button").forEach((btn) => btn.remove());
-
-    // Get text from the cleaned content
-    const messageText = contentClone.innerText || contentClone.textContent;
+    // Fallback: if we didn't get text from mutations, query the latest message
+    let messageText = messageTextFromMutations;
+    if (!messageText || messageText.length === 0) {
+      const messages = document.querySelectorAll('[data-message-author-role="assistant"]');
+      if (messages.length > messageCountBeforeQuery) {
+        const latestMessage = messages[messages.length - 1];
+        const messageContent = latestMessage.querySelector('[class*="markdown"], [class*="message"], [data-message-id]') || latestMessage;
+        const contentClone = messageContent.cloneNode(true);
+        contentClone.querySelectorAll("button").forEach((btn) => btn.remove());
+        messageText = contentClone.innerText || contentClone.textContent || '';
+      }
+    }
 
     const hasActionButtons = foundCopyButton;
 
