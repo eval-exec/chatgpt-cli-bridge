@@ -354,7 +354,8 @@ function checkCompletion() {
   const copyButton = parent.querySelector('button[aria-label="Copy"]');
   const shareButton = parent.querySelector('button[aria-label*="Share"]');
 
-  return copyButton !== null || shareButton !== null;
+  // return copyButton !== null || shareButton !== null;
+  return false;
 }
 
 // Setup MutationObserver to watch for response changes
@@ -365,14 +366,20 @@ function setupObserver(container) {
   }
 
   observer = new MutationObserver((mutations) => {
-    // for (const m of mutations) {
-    //   console.log(m);
-    //   if (m.addedNodes.length) {
-    //     for (const node of m.addedNodes) {
-    //       console.log("added", node);
-    //     }
-    //   }
-    // }
+    for (const m of mutations) {
+      for (const node of m.addedNodes) {
+        if (isConnected && ws.readyState === WebSocket.OPEN) {
+          ws.send(
+            JSON.stringify({
+              type: "debug",
+              text: node,
+              done: false,
+            }),
+          );
+        }
+      }
+    }
+
     // Find all assistant messages
     const messages = document.querySelectorAll(
       '[data-message-author-role="assistant"]',
@@ -420,36 +427,36 @@ function setupObserver(container) {
         responseTimeout = null;
       }
 
-      // Start polling for completion if not already started
-      if (!completionCheckInterval && newContent.length > 0) {
-        console.log(
-          "[ChatGPT CLI Bridge] Starting completion check polling...",
-        );
-        completionCheckInterval = setInterval(() => {
-          if (checkCompletion()) {
-            console.log("[ChatGPT CLI Bridge] Completion detected by polling!");
-            clearInterval(completionCheckInterval);
-            completionCheckInterval = null;
+      // // Start polling for completion if not already started
+      // if (!completionCheckInterval && newContent.length > 0) {
+      //   console.log(
+      //     "[ChatGPT CLI Bridge] Starting completion check polling...",
+      //   );
+      //   completionCheckInterval = setInterval(() => {
+      //     if (checkCompletion()) {
+      //       console.log("[ChatGPT CLI Bridge] Completion detected by polling!");
+      //       clearInterval(completionCheckInterval);
+      //       completionCheckInterval = null;
 
-            if (isConnected && ws.readyState === WebSocket.OPEN) {
-              ws.send(
-                JSON.stringify({
-                  type: "chunk",
-                  text: "",
-                  done: true,
-                }),
-              );
-            }
-          }
-        }, 500);
-      }
+      //       if (isConnected && ws.readyState === WebSocket.OPEN) {
+      //         ws.send(
+      //           JSON.stringify({
+      //             type: "chunk",
+      //             text: "",
+      //             done: true,
+      //           }),
+      //         );
+      //       }
+      //     }
+      //   }, 500);
+      // }
 
       if (isConnected && ws.readyState === WebSocket.OPEN) {
         ws.send(
           JSON.stringify({
             type: "chunk",
             text: newContent,
-            done: hasActionButtons,
+            done: false,
           }),
         );
       }

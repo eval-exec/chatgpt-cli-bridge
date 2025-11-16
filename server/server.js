@@ -46,7 +46,7 @@ wss.on('connection', (ws) => {
         }
       } else if (ws.clientType === 'extension') {
         // Extension -> CLI clients (stream response chunks)
-        if (message.type === 'chunk' || message.type === 'error' || message.type === 'ready') {
+        if (message.type === 'chunk' || message.type === 'error' || message.type === 'ready' || message.type === 'debug') {
           cliClients.forEach(client => {
             if (client.readyState === WebSocket.OPEN) {
               client.send(JSON.stringify(message));
@@ -54,8 +54,12 @@ wss.on('connection', (ws) => {
           });
 
           if (message.type === 'chunk') {
-            const preview = message.text.substring(0, 30).replace(/\n/g, ' ');
-            console.log(`Chunk: "${preview}..." (done: ${message.done})`);
+            // const preview = message.text.substring(0, 30).replace(/\n/g, ' ');
+            console.log(`Chunk: "${message.text}..." (done: ${message.done})`);
+          }
+          
+          if (message.type === 'debug') {
+            console.log(`Debug: "${message.text}"`);
           }
         }
       }
